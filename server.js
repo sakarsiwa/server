@@ -12,8 +12,7 @@ const db = require('./database.js');
 const CONVERTAPI_SECRET = 'Skg2U1AppZxUAY5slMZCnqoKGoylHGe9';
 
 const app = express();
-const PORT = 3001;
-
+const PORT = process.env.PORT || 3001; // ✅ Use Render's port, or 3001 for local testing
 // --- Middleware & Multer Config ---
 app.use(cors());
 app.use(express.json());
