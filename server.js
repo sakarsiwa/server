@@ -14,7 +14,13 @@ const CONVERTAPI_SECRET = 'Skg2U1AppZxUAY5slMZCnqoKGoylHGe9';
 const app = express();
 const PORT = process.env.PORT || 3001; // ✅ Use Render's port, or 3001 for local testing
 // --- Middleware & Multer Config ---
-app.use(cors());
+// Define the allowed origin (your Netlify site)
+const corsOptions = {
+  origin: 'https://courageous-heliotrope-54f587.netlify.app',
+  optionsSuccessStatus: 200 // For legacy browser support
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const storage = multer.diskStorage({
