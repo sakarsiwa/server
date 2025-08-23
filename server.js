@@ -13,16 +13,35 @@ const CONVERTAPI_SECRET = 'Skg2U1AppZxUAY5slMZCnqoKGoylHGe9';
 
 const app = express();
 const PORT = process.env.PORT || 3001; // ✅ Use Render's port, or 3001 for local testing
+
 // --- Middleware & Multer Config ---
-// Define the allowed origin (your Netlify site)
+// Define the allowed origins
+const allowedOrigins = [
+  'https://courageous-heliotrope-54f587.netlify.app' // Your live Netlify site
+];
+
+// If we are not in production (i.e., we are on localhost), add localhost to the list
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.push('http://localhost:5173'); // Default Vite dev port
+}
+
 const corsOptions = {
-  origin: 'https://courageous-heliotrope-54f587.netlify.app',
-  optionsSuccessStatus: 200 // For legacy browser support
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  optionsSuccessStatus: 200
 };
 
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => { cb(null, 'uploads/'); },
   filename: (req, file, cb) => { cb(null, `${Date.now()}-${file.originalname}`); }
@@ -91,7 +110,6 @@ app.post('/api/shipments/:shipmentId/documents', upload.single('file'), (req, re
 
 app.delete('/api/documents/:id', (req, res) => { db.get("SELECT file_path FROM documents WHERE id = ?", [req.params.id], (err, row) => { if (err || !row) return res.status(404).json({ message: "Document not found" }); fs.unlink(path.join(__dirname, row.file_path), () => { db.run(`DELETE FROM documents WHERE id = ?`, req.params.id, function(dbErr) { if (dbErr) return res.status(400).json({ "error": dbErr.message }); res.json({ message: "Document deleted" }); }); }); }); });
 
-// === ADDED SECTION START (Shipment Documents Update) ===
 app.put('/api/documents/:id', (req, res) => {
   const { name, doc_type } = req.body;
   const docId = req.params.id;
@@ -112,7 +130,6 @@ app.put('/api/documents/:id', (req, res) => {
     }
   );
 });
-// === ADDED SECTION END (Shipment Documents Update) ===
 
 app.post('/api/documents/:id/replace', upload.single('file'), (req, res) => { const docId = req.params.id; const newFile = req.file; if (!newFile) return res.status(400).json({ error: 'No file uploaded.' }); db.get("SELECT file_path FROM documents WHERE id = ?", [docId], (err, row) => { if (err || !row) return res.status(404).json({ error: "Document not found" }); const oldFilePath = path.join(__dirname, row.file_path); db.run(`UPDATE documents SET original_name = ?, file_path = ? WHERE id = ?`, [newFile.originalname, newFile.path, docId], function(err) { if (err) { fs.unlink(newFile.path, () => {}); return res.status(500).json({ error: err.message }); } fs.unlink(oldFilePath, (unlinkErr) => { if (unlinkErr) console.error("Could not delete old file:", oldFilePath); }); res.json({ data: { message: 'File replaced successfully' } }); }); }); });
 
@@ -139,7 +156,6 @@ app.post('/api/folders/:folderId/documents', upload.single('file'), (req, res) =
 
 app.delete('/api/folder-documents/:id', (req, res) => { db.get("SELECT file_path FROM folder_documents WHERE id = ?", [req.params.id], (err, row) => { if (err || !row) return res.status(404).json({ message: "Document not found" }); fs.unlink(path.join(__dirname, row.file_path), () => { db.run(`DELETE FROM folder_documents WHERE id = ?`, req.params.id, function(dbErr) { if (dbErr) return res.status(400).json({ "error": dbErr.message }); res.json({ message: "Document deleted" }); }); }); }); });
 
-// === ADDED SECTION START (Folder Documents Update) ===
 app.put('/api/folder-documents/:id', (req, res) => {
   const { name, doc_type } = req.body;
   const docId = req.params.id;
@@ -160,7 +176,6 @@ app.put('/api/folder-documents/:id', (req, res) => {
     }
   );
 });
-// === ADDED SECTION END (Folder Documents Update) ===
 
 app.post('/api/folder-documents/:id/replace', upload.single('file'), (req, res) => { const docId = req.params.id; const newFile = req.file; if (!newFile) return res.status(400).json({ error: 'No file uploaded.' }); db.get("SELECT file_path FROM folder_documents WHERE id = ?", [docId], (err, row) => { if (err || !row) return res.status(404).json({ error: "Document not found" }); const oldFilePath = path.join(__dirname, row.file_path); db.run(`UPDATE folder_documents SET original_name = ?, file_path = ? WHERE id = ?`, [newFile.originalname, newFile.path, docId], function(err) { if (err) { fs.unlink(newFile.path, () => {}); return res.status(500).json({ error: err.message }); } fs.unlink(oldFilePath, (unlinkErr) => { if (unlinkErr) console.error("Could not delete old file:", oldFilePath); }); res.json({ data: { message: 'File replaced successfully' } }); }); }); });
 
