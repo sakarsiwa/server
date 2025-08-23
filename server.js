@@ -12,42 +12,33 @@ const db = require('./database.js');
 const CONVERTAPI_SECRET = 'Skg2U1AppZxUAY5slMZCnqoKGoylHGe9';
 
 const app = express();
-const PORT = process.env.PORT || 3001; // ✅ Use Render's port, or 3001 for local testing
+const PORT = process.env.PORT || 3001;
 
 // --- Middleware & Multer Config ---
-// Define the allowed origins
 const allowedOrigins = [
   'https://courageous-heliotrope-54f587.netlify.app' // Your live Netlify site
 ];
-
-// If we are not in production (i.e., we are on localhost), add localhost to the list
 if (process.env.NODE_ENV !== 'production') {
   allowedOrigins.push('http://localhost:5173'); // Default Vite dev port
 }
-
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
     }
-    return callback(null, true);
   },
   optionsSuccessStatus: 200
 };
-
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
 const storage = multer.diskStorage({
   destination: (req, file, cb) => { cb(null, 'uploads/'); },
   filename: (req, file, cb) => { cb(null, `${Date.now()}-${file.originalname}`); }
 });
 const upload = multer({ storage: storage });
-
 
 // --- Helper function for PDF conversion ---
 const convertToPdf = async (inputPath) => {
@@ -73,24 +64,58 @@ const convertToPdf = async (inputPath) => {
 
 // --- API Endpoints ---
 
-// ====== SUPPLIERS & FOLDERS ======
+// ====== SUPPLIERS ======
 app.get('/api/suppliers', (req, res) => { db.all("SELECT * FROM suppliers ORDER BY name", [], (err, rows) => { if (err) return res.status(500).json({ error: err.message }); res.json({ data: rows }); }); });
 app.post('/api/suppliers', (req, res) => { const { name, details } = req.body; db.run(`INSERT INTO suppliers (name, details) VALUES (?, ?)`, [name, details], function(err) { if (err) return res.status(400).json({ error: err.message }); res.status(201).json({ data: { id: this.lastID, name, details } }); }); });
 app.delete('/api/suppliers/:id', (req, res) => { db.run(`DELETE FROM suppliers WHERE id = ?`, req.params.id, function(err) { if (err) return res.status(400).json({ error: err.message }); res.json({ message: "Supplier deleted" }); }); });
+app.put('/api/suppliers/:id', (req, res) => {
+  const { name, details } = req.body;
+  db.run(`UPDATE suppliers SET name = ?, details = ? WHERE id = ?`, [name, details, req.params.id], function(err) {
+    if (err) return res.status(400).json({ error: err.message });
+    db.get(`SELECT * FROM suppliers WHERE id = ?`, [req.params.id], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ data: row });
+    });
+  });
+});
+
+
+// ====== FOLDERS ======
 app.get('/api/folders', (req, res) => { db.all("SELECT * FROM folders ORDER BY name", [], (err, rows) => { if (err) return res.status(500).json({ error: err.message }); res.json({ data: rows }); }); });
 app.get('/api/folders/:id', (req, res) => { db.get("SELECT * FROM folders WHERE id = ?", [req.params.id], (err, row) => { if (err) return res.status(500).json({ error: err.message }); res.json({ data: row }); }); });
 app.post('/api/folders', (req, res) => { const { name, details } = req.body; db.run(`INSERT INTO folders (name, details) VALUES (?, ?)`, [name, details], function(err) { if (err) return res.status(400).json({ error: err.message }); res.status(201).json({ data: { id: this.lastID, name, details } }); }); });
 app.delete('/api/folders/:id', (req, res) => { db.run(`DELETE FROM folders WHERE id = ?`, req.params.id, function(err) { if (err) return res.status(400).json({ error: err.message }); res.json({ message: "Folder deleted" }); }); });
+app.put('/api/folders/:id', (req, res) => {
+  const { name, details } = req.body;
+  db.run(`UPDATE folders SET name = ?, details = ? WHERE id = ?`, [name, details, req.params.id], function(err) {
+    if (err) return res.status(400).json({ error: err.message });
+    db.get(`SELECT * FROM folders WHERE id = ?`, [req.params.id], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ data: row });
+    });
+  });
+});
+
 
 // ====== SHIPMENTS ======
 app.get('/api/suppliers/:supplierId/shipments', (req, res) => { db.get("SELECT * FROM suppliers WHERE id = ?", [req.params.supplierId], (err, supplier) => { db.all("SELECT * FROM shipments WHERE supplier_id = ? ORDER BY id DESC", [req.params.supplierId], (err, shipments) => { if (err) return res.status(500).json({ error: err.message }); res.json({ supplier, shipments: shipments || [] }); }); }); });
 app.get('/api/shipments/:id', (req, res) => { db.get("SELECT s.*, sup.name as supplier_name, sup.id as supplier_id FROM shipments s JOIN suppliers sup ON s.supplier_id = sup.id WHERE s.id = ?", [req.params.id], (err, row) => { if (err) return res.status(500).json({ error: err.message }); res.json({ data: row }); }); });
 app.post('/api/suppliers/:supplierId/shipments', (req, res) => { const { name, details } = req.body; db.run(`INSERT INTO shipments (name, details, supplier_id) VALUES (?, ?, ?)`, [name, details, req.params.supplierId], function(err) { if (err) return res.status(400).json({ error: err.message }); res.status(201).json({ data: { id: this.lastID, name, details, supplier_id: req.params.supplierId } }); }); });
 app.delete('/api/shipments/:id', (req, res) => { db.run(`DELETE FROM shipments WHERE id = ?`, req.params.id, function(err) { if (err) return res.status(400).json({ error: err.message }); res.json({ message: "Shipment deleted" }); }); });
+app.put('/api/shipments/:id', (req, res) => {
+    const { name, details } = req.body;
+    db.run(`UPDATE shipments SET name = ?, details = ? WHERE id = ?`, [name, details, req.params.id], function(err) {
+        if (err) return res.status(400).json({ error: err.message });
+        db.get(`SELECT * FROM shipments WHERE id = ?`, [req.params.id], (err, row) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ data: row });
+        });
+    });
+});
+
 
 // ====== DOCUMENTS (for Shipments) ======
 app.get('/api/shipments/:shipmentId/documents', (req, res) => { db.all("SELECT * FROM documents WHERE shipment_id = ? ORDER BY id DESC", [req.params.shipmentId], (err, rows) => { if (err) return res.status(500).json({ error: err.message }); res.json({ data: rows }); }); });
-
 app.post('/api/shipments/:shipmentId/documents', upload.single('file'), (req, res) => {
   const { doc_type, custom_name } = req.body;
   const { originalname, path: filePath } = req.file;
@@ -107,22 +132,17 @@ app.post('/api/shipments/:shipmentId/documents', upload.single('file'), (req, re
     }
   );
 });
-
 app.delete('/api/documents/:id', (req, res) => { db.get("SELECT file_path FROM documents WHERE id = ?", [req.params.id], (err, row) => { if (err || !row) return res.status(404).json({ message: "Document not found" }); fs.unlink(path.join(__dirname, row.file_path), () => { db.run(`DELETE FROM documents WHERE id = ?`, req.params.id, function(dbErr) { if (dbErr) return res.status(400).json({ "error": dbErr.message }); res.json({ message: "Document deleted" }); }); }); }); });
-
 app.put('/api/documents/:id', (req, res) => {
   const { name, doc_type } = req.body;
   const docId = req.params.id;
-
   if (!name || !doc_type) {
     return res.status(400).json({ error: "Missing name or doc_type" });
   }
-
   db.run(`UPDATE documents SET original_name = ?, doc_type = ? WHERE id = ?`,
     [name, doc_type, docId],
     function(err) {
       if (err) return res.status(400).json({ error: err.message });
-
       db.get(`SELECT * FROM documents WHERE id = ?`, [docId], (err, updatedDoc) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ data: updatedDoc });
@@ -130,13 +150,10 @@ app.put('/api/documents/:id', (req, res) => {
     }
   );
 });
-
 app.post('/api/documents/:id/replace', upload.single('file'), (req, res) => { const docId = req.params.id; const newFile = req.file; if (!newFile) return res.status(400).json({ error: 'No file uploaded.' }); db.get("SELECT file_path FROM documents WHERE id = ?", [docId], (err, row) => { if (err || !row) return res.status(404).json({ error: "Document not found" }); const oldFilePath = path.join(__dirname, row.file_path); db.run(`UPDATE documents SET original_name = ?, file_path = ? WHERE id = ?`, [newFile.originalname, newFile.path, docId], function(err) { if (err) { fs.unlink(newFile.path, () => {}); return res.status(500).json({ error: err.message }); } fs.unlink(oldFilePath, (unlinkErr) => { if (unlinkErr) console.error("Could not delete old file:", oldFilePath); }); res.json({ data: { message: 'File replaced successfully' } }); }); }); });
-
 
 // ====== FOLDER DOCUMENTS ======
 app.get('/api/folders/:folderId/documents', (req, res) => { db.all("SELECT * FROM folder_documents WHERE folder_id = ? ORDER BY id DESC", [req.params.folderId], (err, rows) => { if (err) return res.status(500).json({ error: err.message }); res.json({ data: rows }); }); });
-
 app.post('/api/folders/:folderId/documents', upload.single('file'), (req, res) => {
   const { doc_type, custom_name } = req.body;
   const { originalname, path: filePath } = req.file;
@@ -153,22 +170,17 @@ app.post('/api/folders/:folderId/documents', upload.single('file'), (req, res) =
     }
   );
 });
-
 app.delete('/api/folder-documents/:id', (req, res) => { db.get("SELECT file_path FROM folder_documents WHERE id = ?", [req.params.id], (err, row) => { if (err || !row) return res.status(404).json({ message: "Document not found" }); fs.unlink(path.join(__dirname, row.file_path), () => { db.run(`DELETE FROM folder_documents WHERE id = ?`, req.params.id, function(dbErr) { if (dbErr) return res.status(400).json({ "error": dbErr.message }); res.json({ message: "Document deleted" }); }); }); }); });
-
 app.put('/api/folder-documents/:id', (req, res) => {
   const { name, doc_type } = req.body;
   const docId = req.params.id;
-
   if (!name || !doc_type) {
     return res.status(400).json({ error: "Missing name or doc_type" });
   }
-  
   db.run(`UPDATE folder_documents SET original_name = ?, doc_type = ? WHERE id = ?`,
     [name, doc_type, docId],
     function(err) {
       if (err) return res.status(400).json({ error: err.message });
-
       db.get(`SELECT * FROM folder_documents WHERE id = ?`, [docId], (err, updatedDoc) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ data: updatedDoc });
@@ -176,7 +188,6 @@ app.put('/api/folder-documents/:id', (req, res) => {
     }
   );
 });
-
 app.post('/api/folder-documents/:id/replace', upload.single('file'), (req, res) => { const docId = req.params.id; const newFile = req.file; if (!newFile) return res.status(400).json({ error: 'No file uploaded.' }); db.get("SELECT file_path FROM folder_documents WHERE id = ?", [docId], (err, row) => { if (err || !row) return res.status(404).json({ error: "Document not found" }); const oldFilePath = path.join(__dirname, row.file_path); db.run(`UPDATE folder_documents SET original_name = ?, file_path = ? WHERE id = ?`, [newFile.originalname, newFile.path, docId], function(err) { if (err) { fs.unlink(newFile.path, () => {}); return res.status(500).json({ error: err.message }); } fs.unlink(oldFilePath, (unlinkErr) => { if (unlinkErr) console.error("Could not delete old file:", oldFilePath); }); res.json({ data: { message: 'File replaced successfully' } }); }); }); });
 
 // ====== EXPORT, PDF & SHARING ======
